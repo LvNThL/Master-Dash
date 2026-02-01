@@ -1,0 +1,63 @@
+//@version=6
+indicator(title="Master Dashboard", shorttitle="Master Dash", overlay=true)
+
+// Position Sizing Settings
+acct_bal  = input.float(10000.0, "Account Balance ($)", minval=1.0)
+qty_input = input.float(0.0, "Quantity", minval=0.0, step=1.0)
+
+// Entry and Stop Loss Settings
+entry_price = input.float(0.0, "Entry Price")
+take_profit = input.float(0.0, "Take Profit")
+stop_loss = input.float(0.0, "Stop Loss")
+textSizeInput = input.string("Small", title="Select Text Size", options=["Tiny", "Small", "Normal", "Large", "Huge", "Auto"])
+var textSize = size.small // Default value
+textSize := switch textSizeInput
+    "Tiny"   => size.tiny
+    "Small"  => size.small
+    "Normal" => size.normal
+    "Large"  => size.large
+    "Huge"   => size.huge
+    "Auto"   => size.auto
+    => size.small // Fallback default
+
+// Stop Distance Calculation
+take_dist = take_profit - entry_price
+stop_dist = entry_price - stop_loss
+
+// Calculate Risk % based on quantity input
+risk_amt  = stop_loss > 0 ? qty_input * stop_dist : 0
+rwd_amt  = take_profit > 0 ? qty_input * take_dist : 0
+risk_perc_calc = acct_bal > 0 ? (risk_amt / acct_bal) * 100 : 0.0
+
+// Calculate Current Profit/Loss
+current_pl = entry_price > 0 ? (close - entry_price) * qty_input : 0
+pl_color = current_pl >= 0 ? color.green : color.red
+
+// Format quantity display
+qty_display = str.tostring(qty_input, "#.##")
+
+// --- TABLE RENDERING ---
+var table dash = table.new(position.bottom_center, 8, 2, border_width=1, border_color=color.gray)
+
+if barstate.islast
+    // Header Row
+    table.cell(dash, 0, 0, "Entry",    bgcolor=color.gray, text_color=color.white, text_size = textSize)
+    table.cell(dash, 1, 0, "TP", bgcolor=color.gray, text_color=color.white, text_size = textSize)
+    table.cell(dash, 2, 0, "SL", bgcolor=color.gray, text_color=color.white, text_size = textSize)
+    table.cell(dash, 3, 0, "QTY", bgcolor=color.new(color.blue, 20), text_color=color.white, text_size = textSize)
+    table.cell(dash, 4, 0, "Risk %",   bgcolor=color.gray, text_color=color.white, text_size = textSize)
+    table.cell(dash, 5, 0, "Risk $",   bgcolor=color.gray, text_color=color.white, text_size = textSize)
+    table.cell(dash, 6, 0, "Reward $",   bgcolor=color.gray, text_color=color.white, text_size = textSize)
+    table.cell(dash, 7, 0, "P/L",   bgcolor=color.gray, text_color=color.white, text_size = textSize)
+
+
+    // Data Row
+    table.cell(dash, 0, 1, str.tostring(entry_price, "#.####"), text_color=color.white, text_size = textSize)
+    table.cell(dash, 1, 1, str.tostring(take_profit, "#.####"), text_color=color.white, text_size = textSize)
+    table.cell(dash, 2, 1, str.tostring(stop_loss, "#.####"), text_color=color.white, text_size = textSize)
+    table.cell(dash, 3, 1, qty_display,                     text_color=color.blue, text_size = textSize)
+    table.cell(dash, 4, 1, str.tostring(risk_perc_calc, "#.##") + "%", text_color=color.white, text_size = textSize)
+    table.cell(dash, 5, 1, "$" + str.tostring(risk_amt, "#.##"), text_color=color.white, text_size = textSize)
+    table.cell(dash, 6, 1, "$" + str.tostring(rwd_amt, "#.##"), text_color=color.white, text_size = textSize)
+    table.cell(dash, 7, 1, "$" + str.tostring(current_pl, "#.##"), text_color=pl_color, text_size = textSize)
+
