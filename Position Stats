@@ -1,63 +1,157 @@
+// ──────────────────────────────────────────────────────────────────────────────
+// Master Dashboard
+// ──────────────────────────────────────────────────────────────────────────────
 //@version=6
 indicator(title="Master Dashboard", shorttitle="Master Dash", overlay=true)
 
-// Position Sizing Settings
-acct_bal  = input.float(10000.0, "Account Balance ($)", minval=1.0)
-qty_input = input.float(0.0, "Quantity", minval=0.0, step=1.0)
+// ─── Inputs: Position ────────────────────────────────────────────────────────
+acct_bal          = input.float(10000.0, "Account Balance ($)", minval=1.0)
+qty_input         = input.float(0.0,     "Quantity (Shares)",            minval=0.0, step=1.0)
+entry_price       = input.float(0.0,     "Entry Price",         minval=0.0, step=0.01)
+take_profit       = input.float(0.0,     "Take Profit",         minval=0.0, step=0.01)
+stop_loss         = input.float(0.0,     "Stop Loss",           minval=0.0, step=0.01)
+liquidation_price = input.float(0.0,     "Liquidation Price",   minval=0.0, step=0.01)
+desired_gain_perc = input.float(0.0,     "Desired Gain (%)",    minval=0.0, step=0.5) // NEW: Desired Gain Input
 
-// Entry and Stop Loss Settings
-entry_price = input.float(0.0, "Entry Price")
-take_profit = input.float(0.0, "Take Profit")
-stop_loss = input.float(0.0, "Stop Loss")
-textSizeInput = input.string("Small", title="Select Text Size", options=["Tiny", "Small", "Normal", "Large", "Huge", "Auto"])
-var textSize = size.small // Default value
-textSize := switch textSizeInput
+// ─── Inputs: Display ─────────────────────────────────────────────────────────
+text_size_input = input.string("Small", title="Select Text Size", options=["Tiny", "Small", "Normal", "Large", "Huge", "Auto"])
+show_lines      = input.bool(true,  "Show Trade Lines")
+show_tables      = input.bool(true,  "Show Table")
+extend_lines    = input.bool(false, "Extend Trade Lines")
+table_pos_input = input.string("Bottom Center", title="Table Position", options=["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"])
+
+// ─── Text Size ───────────────────────────────────────────────────────────────
+var text_size = size.small
+text_size := switch text_size_input
     "Tiny"   => size.tiny
     "Small"  => size.small
     "Normal" => size.normal
     "Large"  => size.large
     "Huge"   => size.huge
     "Auto"   => size.auto
-    => size.small // Fallback default
+    => size.small
 
-// Stop Distance Calculation
-take_dist = take_profit - entry_price
-stop_dist = entry_price - stop_loss
+// ─── Table Position ──────────────────────────────────────────────────────
+var table_pos = position.bottom_center
+table_pos := switch table_pos_input
+    "Top Left"      => position.top_left
+    "Top Center"    => position.top_center
+    "Top Right"     => position.top_right
+    "Middle Left"   => position.middle_left
+    "Middle Center" => position.middle_center
+    "Middle Right"  => position.middle_right
+    "Bottom Left"   => position.bottom_left
+    "Bottom Center" => position.bottom_center
+    "Bottom Right"  => position.bottom_right
+    => position.bottom_center
 
-// Calculate Risk % based on quantity input
-risk_amt  = stop_loss > 0 ? qty_input * stop_dist : 0
-rwd_amt  = take_profit > 0 ? qty_input * take_dist : 0
-risk_perc_calc = acct_bal > 0 ? (risk_amt / acct_bal) * 100 : 0.0
+// ─── Flags ───────────────────────────────────────────────────────────────────
+has_entry       = entry_price       > 0
+has_take_profit = take_profit       > 0
+has_stop_loss   = stop_loss         > 0
+has_liquidation = liquidation_price > 0
+has_target      = desired_gain_perc > 0 and has_entry // NEW: Flag for desired gain calculation
 
-// Calculate Current Profit/Loss
-current_pl = entry_price > 0 ? (close - entry_price) * qty_input : 0
-pl_color = current_pl >= 0 ? color.green : color.red
+// ─── Calculations: Risk / Reward ─────────────────────────────────────────────
+take_dist  = take_profit - entry_price
+stop_dist  = entry_price  - stop_loss
+risk_amt   = has_stop_loss ? qty_input * stop_dist : (has_liquidation ? acct_bal : 0)
+reward_amt = has_take_profit ? qty_input * take_dist : 0
 
-// Format quantity display
+// ─── Calculations: P/L & Totals ─────────────────────────────────────────────
+current_pl    = has_entry ? (close - entry_price) * qty_input : 0
+pl_color      = current_pl >= 0 ? color.green : color.red
+
+total_value   = acct_bal + current_pl
+total_color   = total_value > 0 ? color.green : (total_value < 0 ? color.red : color.white)
+
+position_cost = qty_input * entry_price
+borrowed_amt  = position_cost > acct_bal ? position_cost - acct_bal : 0
+
+// ─── Calculations: Distance Percentages ──────────────────────────────────────
+entry_distance_perc = has_entry       and entry_price       > 0 ? ((close - entry_price)       / entry_price)       * 100 : 0
+sl_distance_perc    = has_stop_loss   and stop_loss         > 0 ? ((close - stop_loss)          / close)             * 100 : 0
+liq_distance_perc   = has_liquidation and liquidation_price > 0 ? ((close - liquidation_price)  / close)             * 100 : 0
+entry_dist_color    = entry_distance_perc >= 0 ? color.green : color.red
+pl_perc             = has_entry and acct_bal > 0 ? (current_pl / acct_bal) * 100 : 0
+
+// ─── NEW: Calculations: Target Price ─────────────────────────────────────────
+target_price = has_target ? entry_price * (1 + (desired_gain_perc / 100)) : 0
+target_pl    = has_target ? (target_price - entry_price) * qty_input : 0
+
+// ─── Formatting ──────────────────────────────────────────────────────────────
+FMT_PRICE = "###,###,###,###.####"
+FMT_MONEY = "###,###,###,###.##"
+FMT_PERCENT = "###,###,###,###.##"
 qty_display = str.tostring(qty_input, "#.##")
 
-// --- TABLE RENDERING ---
-var table dash = table.new(position.bottom_center, 8, 2, border_width=1, border_color=color.gray)
+// ─── Line Colors ─────────────────────────────────────────────────────────────
+color c_entry  = color.rgb(33, 150, 243)   // blue
+color c_tp     = color.rgb(76, 175, 80)    // green
+color c_sl     = color.rgb(255, 82, 82)    // red
+color c_liq    = color.rgb(255, 152, 0)    // orange
 
-if barstate.islast
-    // Header Row
-    table.cell(dash, 0, 0, "Entry",    bgcolor=color.gray, text_color=color.white, text_size = textSize)
-    table.cell(dash, 1, 0, "TP", bgcolor=color.gray, text_color=color.white, text_size = textSize)
-    table.cell(dash, 2, 0, "SL", bgcolor=color.gray, text_color=color.white, text_size = textSize)
-    table.cell(dash, 3, 0, "QTY", bgcolor=color.new(color.blue, 20), text_color=color.white, text_size = textSize)
-    table.cell(dash, 4, 0, "Risk %",   bgcolor=color.gray, text_color=color.white, text_size = textSize)
-    table.cell(dash, 5, 0, "Risk $",   bgcolor=color.gray, text_color=color.white, text_size = textSize)
-    table.cell(dash, 6, 0, "Reward $",   bgcolor=color.gray, text_color=color.white, text_size = textSize)
-    table.cell(dash, 7, 0, "P/L",   bgcolor=color.gray, text_color=color.white, text_size = textSize)
+// ─── Draw Lines & Labels ─────────────────────────────────────────────────────
+line  line_entry = na, line  line_tp  = na, line  line_sl  = na, line  line_liq = na
+label lbl_entry  = na, label lbl_tp   = na, label lbl_sl   = na, label lbl_liq  = na
 
+ext = extend_lines ? extend.left : extend.none
 
-    // Data Row
-    table.cell(dash, 0, 1, str.tostring(entry_price, "#.####"), text_color=color.white, text_size = textSize)
-    table.cell(dash, 1, 1, str.tostring(take_profit, "#.####"), text_color=color.white, text_size = textSize)
-    table.cell(dash, 2, 1, str.tostring(stop_loss, "#.####"), text_color=color.white, text_size = textSize)
-    table.cell(dash, 3, 1, qty_display,                     text_color=color.blue, text_size = textSize)
-    table.cell(dash, 4, 1, str.tostring(risk_perc_calc, "#.##") + "%", text_color=color.white, text_size = textSize)
-    table.cell(dash, 5, 1, "$" + str.tostring(risk_amt, "#.##"), text_color=color.white, text_size = textSize)
-    table.cell(dash, 6, 1, "$" + str.tostring(rwd_amt, "#.##"), text_color=color.white, text_size = textSize)
-    table.cell(dash, 7, 1, "$" + str.tostring(current_pl, "#.##"), text_color=pl_color, text_size = textSize)
+if barstate.islast and show_lines
+    if has_entry
+        line_entry := line.new(bar_index - 25, entry_price, bar_index + 3, entry_price, xloc=xloc.bar_index, extend=ext, color=c_entry, style=line.style_dotted, width=2)
+        line.delete(line_entry[1])
+        lbl_entry := label.new(bar_index + 4, entry_price, "Entry", style=label.style_label_left, color=color.rgb(0, 0, 0, 100), textcolor=c_entry, size=text_size)
+        label.delete(lbl_entry[1])
+    if has_take_profit
+        line_tp := line.new(bar_index - 25, take_profit, bar_index + 3, take_profit, xloc=xloc.bar_index, extend=ext, color=c_tp, style=line.style_dotted, width=2)
+        line.delete(line_tp[1])
+        lbl_tp := label.new(bar_index + 4, take_profit, "T/P", style=label.style_label_left, color=color.rgb(0, 0, 0, 100), textcolor=c_tp, size=text_size)
+        label.delete(lbl_tp[1])
+    if has_stop_loss
+        line_sl := line.new(bar_index - 25, stop_loss, bar_index + 3, stop_loss, xloc=xloc.bar_index, extend=ext, color=c_sl, style=line.style_dotted, width=2)
+        line.delete(line_sl[1])
+        lbl_sl := label.new(bar_index + 4, stop_loss, "S/L", style=label.style_label_left, color=color.rgb(0, 0, 0, 100), textcolor=c_sl, size=text_size)
+        label.delete(lbl_sl[1])
+    if has_liquidation
+        line_liq := line.new(bar_index - 25, liquidation_price, bar_index + 3, liquidation_price, xloc=xloc.bar_index, extend=ext, color=c_liq, style=line.style_dotted, width=2)
+        line.delete(line_liq[1])
+        lbl_liq := label.new(bar_index + 4, liquidation_price, "Liq", style=label.style_label_left, color=color.rgb(0, 0, 0, 100), textcolor=c_liq, size=text_size)
+        label.delete(lbl_liq[1])
 
+// ─── Dashboard Table ─────────────────────────────────────────────────────────
+// UPDATED: Changed columns from 5 to 6 to fit the new Target Goal data.
+var table dash = table.new(table_pos, 6, 4, border_width=1, border_color=color.gray)
+
+if barstate.islast and show_tables == true
+    // Row 0 — Position headers
+    table.cell(dash, 0, 0, "Entry",    bgcolor=color.gray,                  text_color=color.white, text_size=text_size)
+    table.cell(dash, 1, 0, "TP",       bgcolor=color.gray,                  text_color=color.white, text_size=text_size)
+    table.cell(dash, 2, 0, "SL",       bgcolor=color.gray,                  text_color=color.white, text_size=text_size)
+    table.cell(dash, 3, 0, "Liq",      bgcolor=color.new(color.red, 20),    text_color=color.white, text_size=text_size)
+    table.cell(dash, 4, 0, "QTY",      bgcolor=color.new(color.blue, 20),   text_color=color.white, text_size=text_size)
+    table.cell(dash, 5, 0, "Target " + str.tostring(desired_gain_perc) + "%", bgcolor=color.new(color.purple, 20), text_color=color.white, text_size=text_size) // NEW
+
+    // Row 1 — Position values
+    table.cell(dash, 0, 1, str.tostring(entry_price, FMT_PRICE) + " / " + str.tostring(entry_distance_perc, FMT_PERCENT) + "%", text_color=entry_dist_color, text_size=text_size)
+    table.cell(dash, 1, 1, str.tostring(take_profit, FMT_PRICE),                                                                text_color=color.white,      text_size=text_size)
+    table.cell(dash, 2, 1, str.tostring(stop_loss, FMT_PRICE) + " / " + str.tostring(sl_distance_perc, FMT_PERCENT) + "%",        text_color=color.white,      text_size=text_size)
+    table.cell(dash, 3, 1, str.tostring(liquidation_price, FMT_PRICE) + " / " + str.tostring(liq_distance_perc, FMT_PERCENT ) + "%", text_color=color.red,        text_size=text_size)
+    table.cell(dash, 4, 1, qty_display,                                                                                         text_color=color.blue,       text_size=text_size)
+    table.cell(dash, 5, 1, str.tostring(target_price, FMT_PRICE),                                                               text_color=color.purple,     text_size=text_size) // NEW
+
+    // Row 2 — Financial headers
+    table.cell(dash, 0, 2, "Risk $",   bgcolor=color.gray,                  text_color=color.white,  text_size=text_size)
+    table.cell(dash, 1, 2, "Reward $", bgcolor=color.gray,                  text_color=color.white,  text_size=text_size)
+    table.cell(dash, 2, 2, "P/L",      bgcolor=color.gray,                  text_color=color.white,  text_size=text_size)
+    table.cell(dash, 3, 2, "Total",    bgcolor=color.gray,                  text_color=color.white,  text_size=text_size)
+    table.cell(dash, 4, 2, "Borrowed", bgcolor=color.new(color.orange, 20), text_color=color.white,  text_size=text_size)
+    table.cell(dash, 5, 2, "Target P/L", bgcolor=color.new(color.purple, 20), text_color=color.white,  text_size=text_size) // NEW
+
+    // Row 3 — Financial values
+    table.cell(dash, 0, 3, "$" + str.tostring(risk_amt, FMT_MONEY),     text_color=color.white,  text_size=text_size)
+    table.cell(dash, 1, 3, "$" + str.tostring(reward_amt, FMT_MONEY),   text_color=color.white,  text_size=text_size)
+    table.cell(dash, 2, 3, "$" + str.tostring(current_pl, FMT_MONEY) + " / " + str.tostring(pl_perc, FMT_PERCENT) + "%", text_color=pl_color, text_size=text_size)
+    table.cell(dash, 3, 3, "$" + str.tostring(total_value, FMT_MONEY),  text_color=total_color,  text_size=text_size)
+    table.cell(dash, 4, 3, "$" + str.tostring(borrowed_amt, FMT_MONEY), text_color=color.orange, text_size=text_size)
+    table.cell(dash, 5, 3, "$" + str.tostring(target_pl, FMT_MONEY),    text_color=color.purple, text_size=text_size) // NEW
