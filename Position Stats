@@ -11,12 +11,12 @@ entry_price       = input.float(0.0,     "Entry Price",         minval=0.0, step
 take_profit       = input.float(0.0,     "Take Profit",         minval=0.0, step=0.01)
 stop_loss         = input.float(0.0,     "Stop Loss",           minval=0.0, step=0.01)
 liquidation_price = input.float(0.0,     "Liquidation Price",   minval=0.0, step=0.01)
-desired_gain_perc = input.float(0.0,     "Desired Gain (%)",    minval=0.0, step=0.5) // NEW: Desired Gain Input
+desired_gain_perc = input.float(0.0,     "Desired Gain (%)",    minval=0.0, step=0.5)
 
 // ─── Inputs: Display ─────────────────────────────────────────────────────────
 text_size_input = input.string("Small", title="Select Text Size", options=["Tiny", "Small", "Normal", "Large", "Huge", "Auto"])
 show_lines      = input.bool(true,  "Show Trade Lines")
-show_tables      = input.bool(true,  "Show Table")
+show_tables     = input.bool(true,  "Show Table")
 extend_lines    = input.bool(false, "Extend Trade Lines")
 table_pos_input = input.string("Bottom Center", title="Table Position", options=["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"])
 
@@ -50,7 +50,7 @@ has_entry       = entry_price       > 0
 has_take_profit = take_profit       > 0
 has_stop_loss   = stop_loss         > 0
 has_liquidation = liquidation_price > 0
-has_target      = desired_gain_perc > 0 and has_entry // NEW: Flag for desired gain calculation
+has_target      = desired_gain_perc > 0 and has_entry
 
 // ─── Calculations: Risk / Reward ─────────────────────────────────────────────
 take_dist  = take_profit - entry_price
@@ -75,13 +75,13 @@ liq_distance_perc   = has_liquidation and liquidation_price > 0 ? ((close - liqu
 entry_dist_color    = entry_distance_perc >= 0 ? color.green : color.red
 pl_perc             = has_entry and acct_bal > 0 ? (current_pl / acct_bal) * 100 : 0
 
-// ─── NEW: Calculations: Target Price ─────────────────────────────────────────
+// ─── Calculations: Target Price ─────────────────────────────────────────
 target_price = has_target ? entry_price * (1 + (desired_gain_perc / 100)) : 0
 target_pl    = has_target ? (target_price - entry_price) * qty_input : 0
 
 // ─── Formatting ──────────────────────────────────────────────────────────────
-FMT_PRICE = "###,###,###,###.####"
-FMT_MONEY = "###,###,###,###.##"
+FMT_PRICE   = "###,###,###,###.####"
+FMT_MONEY   = "###,###,###,###.##"
 FMT_PERCENT = "###,###,###,###.##"
 qty_display = str.tostring(qty_input, "#.##")
 
@@ -90,10 +90,12 @@ color c_entry  = color.rgb(33, 150, 243)   // blue
 color c_tp     = color.rgb(76, 175, 80)    // green
 color c_sl     = color.rgb(255, 82, 82)    // red
 color c_liq    = color.rgb(255, 152, 0)    // orange
+color c_target = color.rgb(156, 39, 176)   // purple (NEW)
 
 // ─── Draw Lines & Labels ─────────────────────────────────────────────────────
-line  line_entry = na, line  line_tp  = na, line  line_sl  = na, line  line_liq = na
-label lbl_entry  = na, label lbl_tp   = na, label lbl_sl   = na, label lbl_liq  = na
+// NEW: Added line_target and lbl_target variables
+line  line_entry = na, line  line_tp  = na, line  line_sl  = na, line  line_liq = na, line  line_target = na
+label lbl_entry  = na, label lbl_tp   = na, label lbl_sl   = na, label lbl_liq  = na, label lbl_target  = na
 
 ext = extend_lines ? extend.left : extend.none
 
@@ -118,9 +120,14 @@ if barstate.islast and show_lines
         line.delete(line_liq[1])
         lbl_liq := label.new(bar_index + 4, liquidation_price, "Liq", style=label.style_label_left, color=color.rgb(0, 0, 0, 100), textcolor=c_liq, size=text_size)
         label.delete(lbl_liq[1])
+    // NEW: Target Line Drawing Logic
+    if has_target
+        line_target := line.new(bar_index - 25, target_price, bar_index + 3, target_price, xloc=xloc.bar_index, extend=ext, color=c_target, style=line.style_dotted, width=2)
+        line.delete(line_target[1])
+        lbl_target := label.new(bar_index + 4, target_price, "Target", style=label.style_label_left, color=color.rgb(0, 0, 0, 100), textcolor=c_target, size=text_size)
+        label.delete(lbl_target[1])
 
 // ─── Dashboard Table ─────────────────────────────────────────────────────────
-// UPDATED: Changed columns from 5 to 6 to fit the new Target Goal data.
 var table dash = table.new(table_pos, 6, 4, border_width=1, border_color=color.gray)
 
 if barstate.islast and show_tables == true
@@ -130,7 +137,7 @@ if barstate.islast and show_tables == true
     table.cell(dash, 2, 0, "SL",       bgcolor=color.gray,                  text_color=color.white, text_size=text_size)
     table.cell(dash, 3, 0, "Liq",      bgcolor=color.new(color.red, 20),    text_color=color.white, text_size=text_size)
     table.cell(dash, 4, 0, "QTY",      bgcolor=color.new(color.blue, 20),   text_color=color.white, text_size=text_size)
-    table.cell(dash, 5, 0, "Target " + str.tostring(desired_gain_perc) + "%", bgcolor=color.new(color.purple, 20), text_color=color.white, text_size=text_size) // NEW
+    table.cell(dash, 5, 0, "Target " + str.tostring(desired_gain_perc) + "%", bgcolor=color.new(c_target, 20), text_color=color.white, text_size=text_size)
 
     // Row 1 — Position values
     table.cell(dash, 0, 1, str.tostring(entry_price, FMT_PRICE) + " / " + str.tostring(entry_distance_perc, FMT_PERCENT) + "%", text_color=entry_dist_color, text_size=text_size)
@@ -138,7 +145,7 @@ if barstate.islast and show_tables == true
     table.cell(dash, 2, 1, str.tostring(stop_loss, FMT_PRICE) + " / " + str.tostring(sl_distance_perc, FMT_PERCENT) + "%",        text_color=color.white,      text_size=text_size)
     table.cell(dash, 3, 1, str.tostring(liquidation_price, FMT_PRICE) + " / " + str.tostring(liq_distance_perc, FMT_PERCENT ) + "%", text_color=color.red,        text_size=text_size)
     table.cell(dash, 4, 1, qty_display,                                                                                         text_color=color.blue,       text_size=text_size)
-    table.cell(dash, 5, 1, str.tostring(target_price, FMT_PRICE),                                                               text_color=color.purple,     text_size=text_size) // NEW
+    table.cell(dash, 5, 1, str.tostring(target_price, FMT_PRICE),                                                               text_color=c_target,         text_size=text_size)
 
     // Row 2 — Financial headers
     table.cell(dash, 0, 2, "Risk $",   bgcolor=color.gray,                  text_color=color.white,  text_size=text_size)
@@ -146,7 +153,7 @@ if barstate.islast and show_tables == true
     table.cell(dash, 2, 2, "P/L",      bgcolor=color.gray,                  text_color=color.white,  text_size=text_size)
     table.cell(dash, 3, 2, "Total",    bgcolor=color.gray,                  text_color=color.white,  text_size=text_size)
     table.cell(dash, 4, 2, "Borrowed", bgcolor=color.new(color.orange, 20), text_color=color.white,  text_size=text_size)
-    table.cell(dash, 5, 2, "Target P/L", bgcolor=color.new(color.purple, 20), text_color=color.white,  text_size=text_size) // NEW
+    table.cell(dash, 5, 2, "Target P/L", bgcolor=color.new(c_target, 20), text_color=color.white,  text_size=text_size)
 
     // Row 3 — Financial values
     table.cell(dash, 0, 3, "$" + str.tostring(risk_amt, FMT_MONEY),     text_color=color.white,  text_size=text_size)
@@ -154,4 +161,4 @@ if barstate.islast and show_tables == true
     table.cell(dash, 2, 3, "$" + str.tostring(current_pl, FMT_MONEY) + " / " + str.tostring(pl_perc, FMT_PERCENT) + "%", text_color=pl_color, text_size=text_size)
     table.cell(dash, 3, 3, "$" + str.tostring(total_value, FMT_MONEY),  text_color=total_color,  text_size=text_size)
     table.cell(dash, 4, 3, "$" + str.tostring(borrowed_amt, FMT_MONEY), text_color=color.orange, text_size=text_size)
-    table.cell(dash, 5, 3, "$" + str.tostring(target_pl, FMT_MONEY),    text_color=color.purple, text_size=text_size) // NEW
+    table.cell(dash, 5, 3, "$" + str.tostring(target_pl, FMT_MONEY),    text_color=c_target,     text_size=text_size)
